@@ -101,18 +101,12 @@ public class JFreeChartSynapsModel {
         //Target Neuron///////////////////////////////////////////
         Map<OutputType, List<Double>> res = synapsModel.start(inputsNeuronsWaves);
         System.out.println(res.get(OutputType.V));
-
-        //Map<OutputType, List<Double>> res = synapsModel.getRes();
-        //System.out.println(synapsModel.getLastAEs());
-        //System.out.println(res.get(OutputType.V));
-        //System.out.println(synapsModel.getISyns());
-        //viewVTChartWithStim(res, modelTarget, spikeWave);
     }
 
     public static void main(String[] args) {
         double[] phasesInputNeurons = new double[]{10, 10, 10, 10};
         goWithChangeTargetNeuronNSynParams(phasesInputNeurons,
-                2, 0.1,
+                2, 10,
                 1, 24, 30, 2);
     }
 }
