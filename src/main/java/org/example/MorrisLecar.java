@@ -140,7 +140,8 @@ public class MorrisLecar {
         res.put(OutputType.V, new ArrayList<>());
         res.put(OutputType.W, new ArrayList<>());
         res.put(OutputType.H, new ArrayList<>());
-        res.put(OutputType.Z, new ArrayList<>()); //zM
+        res.put(OutputType.ZM, new ArrayList<>());
+        res.put(OutputType.ZAHP, new ArrayList<>());
 
         for (double t = 0; t < totalTime; t += dt) {
             rk4Step();
@@ -148,7 +149,36 @@ public class MorrisLecar {
             res.get(OutputType.V).add(V);
             res.get(OutputType.W).add(w);
             res.get(OutputType.H).add(h);
-            res.get(OutputType.Z).add(zM);
+            res.get(OutputType.ZM).add(zM);
+            res.get(OutputType.ZAHP).add(zAHP);
+        }
+
+        return res;
+    }
+
+    public Map<OutputType, List<Double>> startWithStimWave(Double[] stimWave){
+        if (stimWave.length > totalTime/dt){
+            throw new RuntimeException("stimWave not correct length");
+        }
+
+        Map<OutputType, List<Double>> res = new HashMap<>();
+        res.put(OutputType.TIME, new ArrayList<>());
+        res.put(OutputType.TIME, new ArrayList<>());
+        res.put(OutputType.V, new ArrayList<>());
+        res.put(OutputType.W, new ArrayList<>());
+        res.put(OutputType.H, new ArrayList<>());
+        res.put(OutputType.ZM, new ArrayList<>());
+        res.put(OutputType.ZAHP, new ArrayList<>());
+
+        for (int i = 0; i<stimWave.length; i++) {
+            setI_DC(stimWave[i]);
+            rk4Step();
+            res.get(OutputType.TIME).add(i*dt);
+            res.get(OutputType.V).add(V);
+            res.get(OutputType.W).add(w);
+            res.get(OutputType.H).add(h);
+            res.get(OutputType.ZM).add(zM);
+            res.get(OutputType.ZAHP).add(zAHP);
         }
 
         return res;

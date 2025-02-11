@@ -1,3 +1,3 @@
 package org.example;
 
-public enum OutputType {V, W, H, Z, TIME}
+public enum OutputType {V, W, H, ZM, ZAHP, TIME}
