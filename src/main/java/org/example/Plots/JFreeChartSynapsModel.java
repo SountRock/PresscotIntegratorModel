@@ -177,6 +177,62 @@ public class JFreeChartSynapsModel {
     }
 
     /**
+     * Вывести график управляющих каналами переменных
+     * @param res
+     * @param model
+     */
+    public static void viewVTControlVars(Map<VarType, List<Double>> res, MorrisLecar model) {
+        List<Double> times = res.get(VarType.TIME);
+
+        Map<VarType, Double> mins = new HashMap<>();
+        Map<VarType, Double> maxs = new HashMap<>();
+        for (VarType t : new VarType[]{VarType.W, VarType.ZM, VarType.ZAHP, VarType.H}){
+            mins.put(t, res.get(t).get(0));
+            maxs.put(t, res.get(t).get(0));
+        }
+
+        //Создаем набор данных
+        Map<VarType, XYSeriesCollection> datasets = new HashMap<>();
+        for (VarType t : new VarType[]{VarType.W, VarType.ZM, VarType.ZAHP, VarType.H}){
+            datasets.put(t, new XYSeriesCollection());
+            XYSeries series = new XYSeries(t + " Data");
+            List<Double> values = res.get(t);
+            for (int j = 0; j < times.size(); j++){
+                double val = values.get(j);
+                series.add(times.get(j), Double.valueOf(val));
+            }
+            datasets.get(t).addSeries(series);
+        }
+
+        Map<VarType, ChartPanel> chartsPanels = new HashMap<>();
+        for (VarType t : new VarType[]{VarType.W, VarType.ZM, VarType.ZAHP, VarType.H}){
+            JFreeChart chart = ChartFactory.createXYLineChart(
+                    t + "(t)",
+                    "time", t.name(), datasets.get(t)
+            );
+            NumberAxis rangeAxis = (NumberAxis) chart.getXYPlot().getRangeAxis();
+            rangeAxis.setRange(
+                    mins.get(t) - 0.05 * mins.get(t),
+                    maxs.get(t) + 0.05 * maxs.get(t)
+            );
+
+            chartsPanels.put(t, new ChartPanel(chart));
+        }
+
+        JPanel mainPanel = new JPanel(new GridLayout(4, 1));
+        mainPanel.add(chartsPanels.get(VarType.W));
+        mainPanel.add(chartsPanels.get(VarType.ZM));
+        mainPanel.add(chartsPanels.get(VarType.ZAHP));
+        mainPanel.add(chartsPanels.get(VarType.H));
+        JFrame frame = new JFrame("Model Plot Controls");
+        frame.setContentPane(mainPanel);
+        frame.setSize(800, 600);
+        frame.setLocationRelativeTo(null);
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+        frame.setVisible(true);
+    }
+
+    /**
      * Стимуляция с изменением G целевого нейрона и Cm_syn, tau_syn
      * @param phasesInputNeurons
      * @param GAHP
@@ -218,16 +274,17 @@ public class JFreeChartSynapsModel {
         System.out.println(res.get(VarType.V));
 
         viewVoltageNISynapse(res, synapsModel);
+        viewVTControlVars(res, synapsModel.getOutputNeuron());
     }
 
     public static void main(String[] args) {
-        /*
+        //*
         //Спайки идут синхронно
         //Здоровый спайк
         double[] phasesInputNeurons = new double[]{10, 10, 10, 10};
         //G мСм/см^2
         goWithChangeTargetNeuronNSynParams(phasesInputNeurons,
-               1, 24, 30, 1);
+               1, 24, 30, 200);
         //*/
 
         /*
@@ -239,7 +296,7 @@ public class JFreeChartSynapsModel {
                1, 24, 30, 1);
         //*/
 
-        //*
+        /*
         //Спайки идут хаотично 1
         //Временное окно 2.1 с, шаг 0.7 c.
         double[] phasesInputNeurons = new double[]{10, 11, 11.5, 12.1};

@@ -2,7 +2,6 @@ package org.example.Elemets;
 
 import lombok.AccessLevel;
 import lombok.experimental.FieldDefaults;
-import org.example.Elemets.MorrisLecar;
 import org.example.ModelInterfeses.Neuron;
 import org.example.ModelInterfeses.VarType;
 
@@ -19,7 +18,7 @@ import java.util.Map;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class SynapsModel {
     List<Neuron> inputNeurons;
-    Neuron outputNeuron;
+    MorrisLecar outputNeuron;
     List<Double> ISyns;
 
     public SynapsModel() {
@@ -28,10 +27,6 @@ public class SynapsModel {
 
     public void correctOutputNeuron(MorrisLecar outputNeuron){
         this.outputNeuron = outputNeuron;
-    }
-
-    public void connectInputNeurons(List<Neuron> inputNeurons){
-        this.inputNeurons = inputNeurons;
     }
 
     /**
@@ -60,8 +55,8 @@ public class SynapsModel {
             double k = outputNeuron.getCm() / tau;
             double ISyn = 0;
             for (int l = 0; l < VCurrentInput.length; l++) {
-                double aEs = VCurrentInput[l] - outputNeuron.getVm();
-                ISyn += k * aEs;
+                double aE = VCurrentInput[l] - outputNeuron.getVm();
+                ISyn += k * aE;
             }
             ISyns.add(ISyn);
             outputNeuron.setIStim(ISyn);
@@ -69,12 +64,16 @@ public class SynapsModel {
             res.get(VarType.TIME).add(i*outputNeuron.getDt());
             res.get(VarType.V).add(outputNeuron.getVm());
             res.get(VarType.TAU).add(tau);
+            res.get(VarType.W).add(outputNeuron.getWfunc().getLatGateVal());
+            res.get(VarType.H).add(outputNeuron.getHfunc().getLatGateVal());
+            res.get(VarType.ZM).add(outputNeuron.getZMfunc().getLatGateVal());
+            res.get(VarType.ZAHP).add(outputNeuron.getZAHPfunc().getLatGateVal());
         }
 
         return res;
     }
 
-    public Neuron getOutputNeuron() {
+    public MorrisLecar getOutputNeuron() {
         return outputNeuron;
     }
 

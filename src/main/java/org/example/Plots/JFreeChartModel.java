@@ -176,22 +176,14 @@ public class JFreeChartModel {
         Map<VarType, ChartPanel> chartsPanels = new HashMap<>();
         for (VarType t : new VarType[]{VarType.W, VarType.ZM, VarType.ZAHP, VarType.H}){
             JFreeChart chart = ChartFactory.createXYLineChart(
-                    t + "(t) with GK=" + model.getGK() +
-                            "; GNa=" + model.getGNa() +
-                            "; GM=" + model.getGM() +
-                            "; GAHP=" + model.getGAHP() + "(мСм/см^2)",
+                    t + "(t)",
                     "time", t.name(), datasets.get(t)
-            );
-            NumberAxis rangeAxis = (NumberAxis) chart.getXYPlot().getRangeAxis();
-            rangeAxis.setRange(
-                    mins.get(t) - 0.05 * mins.get(t),
-                    maxs.get(t) + 0.05 * maxs.get(t)
             );
 
             chartsPanels.put(t, new ChartPanel(chart));
         }
 
-        JPanel mainPanel = new JPanel(new GridLayout(3, 1));
+        JPanel mainPanel = new JPanel(new GridLayout(4, 1));
         mainPanel.add(chartsPanels.get(VarType.W));
         mainPanel.add(chartsPanels.get(VarType.ZM));
         mainPanel.add(chartsPanels.get(VarType.ZAHP));
@@ -220,6 +212,7 @@ public class JFreeChartModel {
         model.setGM(GM);
         Map<VarType, List<Double>> res = model.start();
         viewVTChart(res, model);
+        viewVTControlVars(res, model);
     }
 
     /**
@@ -281,9 +274,9 @@ public class JFreeChartModel {
         //goSinWaveWithChangeG(1, 24, 30, 2);
         //*
         goDCWithChangeG(1, 24, 30, 2);
-        goDCWithChangeG(3, 24, 30, 2);
-        goDCWithChangeG(5, 24, 30, 2);
-        goDCWithChangeG(9, 24, 30, 2);
+        //goDCWithChangeG(3, 24, 30, 2);
+        //goDCWithChangeG(5, 24, 30, 2);
+        //goDCWithChangeG(9, 24, 30, 2);
         //*/
         //viewVTControlVars(model);
     }
