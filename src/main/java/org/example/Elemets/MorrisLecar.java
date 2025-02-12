@@ -1,9 +1,16 @@
-package org.example;
+package org.example.Elemets;
 
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.experimental.FieldDefaults;
+import org.example.GateFuncs.H;
+import org.example.GateFuncs.W;
+import org.example.GateFuncs.ZAHP;
+import org.example.GateFuncs.ZM;
+import org.example.ModelInterfeses.IonGateFunc;
+import org.example.ModelInterfeses.Neuron;
+import org.example.ModelInterfeses.VarType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -14,15 +21,16 @@ import java.util.Map;
 @Setter
 @FieldDefaults(level = AccessLevel.PRIVATE)
 /**
- * dV/dt = (I_DC+I_noise-GNa*minf(V)*(V-VNa)-GK*w*(V-VK)-Gshunt* (V-Vshunt)-GM*zM*(V-VK)-GAHP*zAHP*(V-VK))/Cm
+ * dV/dt = (IStim+I_noise-GNa*minf(V)*h*(V-VNa)-GK*w*(V-VK)-Gshunt* (V-Vshunt)-GM*zM*(V-VK)-GAHP*zAHP*(V-VK))/Cm
+ * !!! Почему minf(V) не меняется через Метод Рунге-Кутты 4-го порядка, а напрямую через minf
  * Шум задается рандомом.
  */
-public class MorrisLecar {
+public class MorrisLecar implements Neuron {
     // ========================================================================
     // Параметры модели
     // ========================================================================
     double Cm = 2;          //Емкость мембраны (pF)
-    double I_DC = 0;        //Постоянный ток смещения (DC bias) (мкА/см^2)
+    double IStim = 0;        //Постоянный ток смещения (DC bias) (мкА/см^2)
     double sigma = 0;       //Амплитуда шума (мкА/см^2)
     double tau_inoise = 5;  //Временная константа шума (мс)
     double I_avg = 0;       //Среднее значение шума (мкА/см^2)
@@ -52,15 +60,30 @@ public class MorrisLecar {
     double gamma_h=8;       //Параметр инактивации натрия (mV)
 
     // ========================================================================
+    // Функции ионных каналов
+    // ========================================================================
+    IonGateFunc wfunc = new W(beta_w, gamma_w, phi_w);
+    IonGateFunc hfunc = new H(alpha_h, beta_h, gamma_h, tau_h);
+    IonGateFunc zMfunc = new ZM(tauzM, betazM, gammazM);
+    IonGateFunc zAHPfunc = new ZAHP(tauzAHP, betazAHP, gammazAHP);
+
+    // ========================================================================
     // Переменные состояния
     // ========================================================================
     double Vrest = -70;
-    double V = Vrest;        //Мембранный потенциал (mV)
-    double w = 0.000025;   //Переменная восстановления калия (безразмерная)
-    double zAHP = 0;       //Переменная активации AHP-тока (безразмерная)
-    double zM = 0;         //Переменная активации M-тока (безразмерная)
+    double Vm = Vrest;        //Мембранный потенциал (mV)
+    //double w = 0.000025;   //Переменная восстановления калия (безразмерная)
+    //double zAHP = 0;       //Переменная активации AHP-тока (безразмерная)
+    //double zM = 0;         //Переменная активации M-тока (безразмерная)
     double I_noise = 0;    //Ток шума (мкА/см^2)
-    double h = 1;          //Переменная инактивации натрия (безразмерная)
+    //double h = 1;          //Переменная инактивации натрия (безразмерная)
+
+    public MorrisLecar() {
+        wfunc.setLatGateVal(0.000025);
+        hfunc.setLatGateVal(1);
+        zMfunc.setLatGateVal(0);
+        zAHPfunc.setLatGateVal(0);
+    }
 
     // ========================================================================
     // Параметры симуляции
@@ -69,116 +92,98 @@ public class MorrisLecar {
     double dt = 0.1;         //Шаг интегрирования (мс)
 
     // ========================================================================
+    // tau нейрона глобально
+    // ========================================================================
+
+    /**
+     * Рассчет tau глобального (берется текушее V)
+     * tau = Сm/(gNa + gK + Gshunt + gM + gAHP), где g = f(n), n - управляющая функция каала.
+     * dV/dt = (IStim+I_noise-GNa*minf(V)*h*(V-VNa)-GK*w*(V-VK)-Gshunt* (V-Vshunt)-GM*zM*(V-VK)-GAHP*zAHP*(V-VK))/Cm
+     * @return
+     */
+    public double tauGlobal(){
+        return Cm / ((GNa * minf(Vm)*hfunc.getLatGateVal()) + (GK * wfunc.getLatGateVal()) + Gshunt + (GM * zMfunc.getLatGateVal()) + (GAHP*zAHPfunc.getLatGateVal()));
+    }
+
+    /**
+     * Рассчет tau глобального (V передается как arg)
+     * tau = Сm/(gNa + gK + Gshunt + gM + gAHP), где g = f(n), n - управляющая функция каала.
+     * dV/dt = (IStim+I_noise-GNa*minf(V)*h*(V-VNa)-GK*w*(V-VK)-Gshunt* (V-Vshunt)-GM*zM*(V-VK)-GAHP*zAHP*(V-VK))
+     * @param V
+     * @return
+     */
+    double tauGlobal(double V){
+        return Cm / ((GNa * minf(V)*hfunc.getLatGateVal()) + (GK * wfunc.getLatGateVal()) + Gshunt + (GM * zMfunc.getLatGateVal()) + (GAHP*zAHPfunc.getLatGateVal()));
+    }
+
+    // ========================================================================
     // Вспомогательные функции (зависящие от напряжения)
     // ========================================================================
-    double minf(double V) {
+    public double minf(double V) {
         //Функция активации натрия (мгновенная)
         return 0.5 * (1 + Math.tanh((V - beta_m) / gamma_m));
-    }
-
-    double winf(double V) {
-        //Функция активации калия (в установившемся состоянии)
-        return 0.5 * (1 + Math.tanh((V - beta_w) / gamma_w));
-    }
-
-    double tauw(double V) {
-        //Временная константа активации калия
-        return 1 / Math.cosh((V - beta_w) / (2 * gamma_w));
-    }
-
-    double zinfM(double V) {
-        //Функция активации M-тока (в установившемся состоянии)
-        return 1 / (1 + Math.exp((betazM - V) / gammazM));
-    }
-
-    double zinfAHP(double V) {
-        //Функция активации AHP-тока (в установившемся состоянии)
-        return 1 / (1 + Math.exp((betazAHP - V) / gammazAHP));
-    }
-
-    double hinf(double v){
-        return 1-alpha_h/(1+Math.exp((beta_h-v)/gamma_h));
     }
 
     // ========================================================================
     // Производные (описывают изменение переменных состояния во времени)
     // ========================================================================
-    double dVdt() {
+    public double dVdt() {
         //Уравнение для изменения мембранного потенциала
-        return (I_DC + I_noise - GNa * h * minf(V) * (V - VNa) - GK * w * (V - VK) - Gshunt * (V - Vshunt) - GM * zM * (V - VK) - GAHP * zAHP * (V - VK)) / Cm;
+        return (IStim + I_noise - GNa * hfunc.getLatGateVal() * minf(Vm) * (Vm - VNa) - GK * wfunc.getLatGateVal() * (Vm - VK) - Gshunt * (Vm - Vshunt) - GM * zMfunc.getLatGateVal() * (Vm - VK) - GAHP * zAHPfunc.getLatGateVal() * (Vm - VK)) / Cm;
     }
 
-    double dwdt() {
-        //Уравнение для изменения переменной восстановления калия
-        return phi_w * (winf(V) - w) / tauw(V);
-    }
-
-    double dzAHPdt() {
-        //Уравнение для изменения переменной активации AHP-тока
-        return (zinfAHP(V) - zAHP) / tauzAHP;
-    }
-
-    double dzMdt() {
-        //Уравнение для изменения переменной активации M-тока
-        return (zinfM(V) - zM) / tauzM;
-    }
-
-    double di_noisedt() {
+    public double di_noisedt() {
         //Уравнение для изменения тока шума (процесс Орнштейна-Уленбека)
         // Simple Euler for Ornstein-Uhlenbeck.  More accurate methods exist.
         double nz = Math.random() * 2 - 1;  // Replace with a better random number generator if needed.
         return -1/tau_inoise*(I_noise - I_avg) + sigma*nz;
     }
 
-    double dhdt(){
-        return (hinf(V)-h)/tau_h;
-    }
-
-    public Map<OutputType, List<Double>> start(){
-        Map<OutputType, List<Double>> res = new HashMap<>();
-        res.put(OutputType.TIME, new ArrayList<>());
-        res.put(OutputType.V, new ArrayList<>());
-        res.put(OutputType.W, new ArrayList<>());
-        res.put(OutputType.H, new ArrayList<>());
-        res.put(OutputType.ZM, new ArrayList<>());
-        res.put(OutputType.ZAHP, new ArrayList<>());
+    public Map<VarType, List<Double>> start(){
+        Map<VarType, List<Double>> res = new HashMap<>();
+        res.put(VarType.TIME, new ArrayList<>());
+        res.put(VarType.V, new ArrayList<>());
+        res.put(VarType.W, new ArrayList<>());
+        res.put(VarType.H, new ArrayList<>());
+        res.put(VarType.ZM, new ArrayList<>());
+        res.put(VarType.ZAHP, new ArrayList<>());
 
         for (double t = 0; t < totalTime; t += dt) {
-            rk4Step();
-            res.get(OutputType.TIME).add(t);
-            res.get(OutputType.V).add(V);
-            res.get(OutputType.W).add(w);
-            res.get(OutputType.H).add(h);
-            res.get(OutputType.ZM).add(zM);
-            res.get(OutputType.ZAHP).add(zAHP);
+            step();
+            res.get(VarType.TIME).add(t);
+            res.get(VarType.V).add(Vm);
+            res.get(VarType.W).add(wfunc.getLatGateVal());
+            res.get(VarType.H).add(hfunc.getLatGateVal());
+            res.get(VarType.ZM).add(zMfunc.getLatGateVal());
+            res.get(VarType.ZAHP).add(zAHPfunc.getLatGateVal());
         }
 
         return res;
     }
 
-    public Map<OutputType, List<Double>> startWithStimWave(Double[] stimWave){
+    public Map<VarType, List<Double>> startWithStimWave(Double[] stimWave){
         if (stimWave.length > totalTime/dt){
             throw new RuntimeException("stimWave not correct length");
         }
 
-        Map<OutputType, List<Double>> res = new HashMap<>();
-        res.put(OutputType.TIME, new ArrayList<>());
-        res.put(OutputType.TIME, new ArrayList<>());
-        res.put(OutputType.V, new ArrayList<>());
-        res.put(OutputType.W, new ArrayList<>());
-        res.put(OutputType.H, new ArrayList<>());
-        res.put(OutputType.ZM, new ArrayList<>());
-        res.put(OutputType.ZAHP, new ArrayList<>());
+        Map<VarType, List<Double>> res = new HashMap<>();
+        res.put(VarType.TIME, new ArrayList<>());
+        res.put(VarType.TIME, new ArrayList<>());
+        res.put(VarType.V, new ArrayList<>());
+        res.put(VarType.W, new ArrayList<>());
+        res.put(VarType.H, new ArrayList<>());
+        res.put(VarType.ZM, new ArrayList<>());
+        res.put(VarType.ZAHP, new ArrayList<>());
 
         for (int i = 0; i<stimWave.length; i++) {
-            setI_DC(stimWave[i]);
-            rk4Step();
-            res.get(OutputType.TIME).add(i*dt);
-            res.get(OutputType.V).add(V);
-            res.get(OutputType.W).add(w);
-            res.get(OutputType.H).add(h);
-            res.get(OutputType.ZM).add(zM);
-            res.get(OutputType.ZAHP).add(zAHP);
+            setIStim(stimWave[i]);
+            step();
+            res.get(VarType.TIME).add(i*dt);
+            res.get(VarType.V).add(Vm);
+            res.get(VarType.W).add(wfunc.getLatGateVal());
+            res.get(VarType.H).add(hfunc.getLatGateVal());
+            res.get(VarType.ZM).add(zMfunc.getLatGateVal());
+            res.get(VarType.ZAHP).add(zAHPfunc.getLatGateVal());
         }
 
         return res;
@@ -216,67 +221,67 @@ public class MorrisLecar {
         Для каждого вычисляються k1-k4
      */
     // ========================================================================
-    public void rk4Step() {
+    public void step() {
         //Вычисление k1 (производные в текущей точке)
         double k1_V = dVdt();
-        double k1_w = dwdt();
-        double k1_zAHP = dzAHPdt();
-        double k1_zM = dzMdt();
+        double k1_w = wfunc.dgate_dt(Vm);
+        double k1_zAHP = zAHPfunc.dgate_dt(Vm);
+        double k1_zM = zMfunc.dgate_dt(Vm);
+        double k1_h = hfunc.dgate_dt(Vm);
         double k1_inoise = di_noisedt();
-        double k1_h = dhdt();
 
         //Вычисление k2 (производные в середине интервала, используя k1)
-        double V_temp = V + dt * k1_V / 2;
-        double w_temp = w + dt * k1_w / 2;
-        double zAHP_temp = zAHP + dt * k1_zAHP / 2;
-        double zM_temp = zM + dt * k1_zM / 2;
+        double V_temp = Vm + dt * k1_V / 2;
+        double w_temp = wfunc.getLatGateVal() + dt * k1_w / 2;
+        double zAHP_temp = zAHPfunc.getLatGateVal() + dt * k1_zAHP / 2;
+        double zM_temp = zMfunc.getLatGateVal() + dt * k1_zM / 2;
+        double h_temp = hfunc.getLatGateVal() + dt * k1_h /2;
         double ino_temp = I_noise + dt * k1_inoise / 2;
-        double h_temp = h + dt * k1_h /2;
 
         double k2_V = dVdtUsingTemp(V_temp, w_temp, zAHP_temp, zM_temp, ino_temp, h_temp);
-        double k2_w = dwdtUsingTemp(V_temp);
-        double k2_zAHP = dzAHPdtUsingTemp(V_temp);
-        double k2_zM = dzMdtUsingTemp(V_temp);
+        double k2_w = wfunc.dgate_dtUsingTemp(V_temp);
+        double k2_zAHP = zAHPfunc.dgate_dtUsingTemp(V_temp);
+        double k2_zM = zMfunc.dgate_dtUsingTemp(V_temp);
+        double k2_h = hfunc.dgate_dtUsingTemp(V_temp);
         double k2_inoise = di_noisedtUsingTemp(ino_temp);
-        double k2_h = dhdtUsingTemp(V_temp);
 
         // Вычисление k3 (производные в середине интервала, используя k2)
-        V_temp = V + dt * k2_V / 2;
-        w_temp = w + dt * k2_w / 2;
-        zAHP_temp = zAHP + dt * k2_zAHP / 2;
-        zM_temp = zM + dt * k2_zM / 2;
+        V_temp = Vm + dt * k2_V / 2;
+        w_temp = wfunc.getLatGateVal() + dt * k2_w / 2;
+        zAHP_temp = zAHPfunc.getLatGateVal() + dt * k2_zAHP / 2;
+        zM_temp = zMfunc.getLatGateVal() + dt * k2_zM / 2;
         ino_temp = I_noise + dt * k2_inoise / 2;
-        h_temp = h + dt * k2_h / 2;
+        h_temp = hfunc.getLatGateVal() + dt * k2_h / 2;
 
         double k3_V = dVdtUsingTemp(V_temp, w_temp, zAHP_temp, zM_temp, ino_temp, h_temp);
-        double k3_w = dwdtUsingTemp(V_temp);
-        double k3_zAHP = dzAHPdtUsingTemp(V_temp);
-        double k3_zM = dzMdtUsingTemp(V_temp);
+        double k3_w = wfunc.dgate_dtUsingTemp(V_temp);
+        double k3_zAHP = zAHPfunc.dgate_dtUsingTemp(V_temp);
+        double k3_zM = zMfunc.dgate_dtUsingTemp(V_temp);
         double k3_inoise = di_noisedtUsingTemp(ino_temp);
-        double k3_h = dhdtUsingTemp(V_temp);
+        double k3_h = hfunc.dgate_dtUsingTemp(V_temp);
 
         //Вычисление k4 (производные в конце интервала, используя k3)
-        V_temp = V + dt * k3_V;
-        w_temp = w + dt * k3_w;
-        zAHP_temp = zAHP + dt * k3_zAHP;
-        zM_temp = zM + dt * k3_zM;
+        V_temp = Vm + dt * k3_V;
+        w_temp = wfunc.getLatGateVal() + dt * k3_w;
+        zAHP_temp = zAHPfunc.getLatGateVal() + dt * k3_zAHP;
+        zM_temp = zMfunc.getLatGateVal() + dt * k3_zM;
+        h_temp = hfunc.getLatGateVal() + dt * k3_h;
         ino_temp = I_noise + dt * k3_inoise;
-        h_temp = h + dt * k3_h;
 
         double k4_V = dVdtUsingTemp(V_temp, w_temp, zAHP_temp, zM_temp, ino_temp, h_temp);
-        double k4_w = dwdtUsingTemp(V_temp);
-        double k4_zAHP = dzAHPdtUsingTemp(V_temp);
-        double k4_zM = dzMdtUsingTemp(V_temp);
+        double k4_w = wfunc.dgate_dtUsingTemp(V_temp);
+        double k4_zAHP = zAHPfunc.dgate_dtUsingTemp(V_temp);
+        double k4_zM = zMfunc.dgate_dtUsingTemp(V_temp);
+        double k4_h = hfunc.dgate_dtUsingTemp(V_temp);
         double k4_inoise = di_noisedtUsingTemp(ino_temp);
-        double k4_h = dhdtUsingTemp(V_temp);
 
         //Обновление переменных состояния с использованием взвешенной суммы k1, k2, k3, k4
-        V += dt * (k1_V + 2 * k2_V + 2 * k3_V + k4_V) / 6;
-        w += dt * (k1_w + 2 * k2_w + 2 * k3_w + k4_w) / 6;
-        zAHP += dt * (k1_zAHP + 2 * k2_zAHP + 2 * k3_zAHP + k4_zAHP) / 6;
-        zM += dt * (k1_zM + 2 * k2_zM + 2 * k3_zM + k4_zM) / 6;
+        Vm += dt * (k1_V + 2 * k2_V + 2 * k3_V + k4_V) / 6;
+        wfunc.setLatGateVal(wfunc.getLatGateVal() +  dt * (k1_w + 2 * k2_w + 2 * k3_w + k4_w) / 6);
+        zAHPfunc.setLatGateVal(zAHPfunc.getLatGateVal() + dt * (k1_zAHP + 2 * k2_zAHP + 2 * k3_zAHP + k4_zAHP) / 6);
+        zMfunc.setLatGateVal(zMfunc.getLatGateVal() + dt * (k1_zM + 2 * k2_zM + 2 * k3_zM + k4_zM) / 6);
+        hfunc.setLatGateVal(hfunc.getLatGateVal() + dt * (k1_h + 2 * k2_h + 2 * k3_h + k4_h) / 6);
         I_noise += dt * (k1_inoise + 2 * k2_inoise + 2 * k3_inoise + k4_inoise) / 6;
-        h += dt * (k1_h + 2 * k2_h + 2 * k3_h + k4_h) / 6;
     }
 
     // ========================================================================
@@ -284,27 +289,11 @@ public class MorrisLecar {
     // (необходимы для правильного вычисления производных на промежуточных шагах)
     // ========================================================================
     private double dVdtUsingTemp(double V_temp, double w_temp, double zAHP_temp, double zM_temp, double i_noise_temp, double h_temp) {
-        return (I_DC + i_noise_temp - GNa * h_temp * minf(V_temp) * (V_temp - VNa) - GK * w_temp * (V_temp - VK) - Gshunt * (V_temp - Vshunt) - GM * zM_temp * (V_temp - VK) - GAHP * zAHP_temp * (V_temp - VK)) / Cm;
-    }
-
-    private double dwdtUsingTemp(double V_temp) {
-        return phi_w * (winf(V_temp) - w) / tauw(V_temp);
-    }
-
-    private double dzAHPdtUsingTemp(double V_temp) {
-        return (zinfAHP(V_temp) - zAHP) / tauzAHP;
-    }
-
-    private double dzMdtUsingTemp(double V_temp) {
-        return (zinfM(V_temp) - zM) / tauzM;
+        return (IStim + i_noise_temp - GNa * h_temp * minf(V_temp) * (V_temp - VNa) - GK * w_temp * (V_temp - VK) - Gshunt * (V_temp - Vshunt) - GM * zM_temp * (V_temp - VK) - GAHP * zAHP_temp * (V_temp - VK)) / Cm;
     }
 
     private double di_noisedtUsingTemp(double i_noise_temp) {
         double nz = Math.random() * 2 - 1;
         return -1/tau_inoise*(i_noise_temp - I_avg) + sigma * nz;
-    }
-
-    private double dhdtUsingTemp(double V_temp){
-        return (hinf(V_temp)-h)/tau_h;
     }
 }
